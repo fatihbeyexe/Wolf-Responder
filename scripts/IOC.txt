@@ -1,0 +1,6 @@
+File?C:\users\user\documents\notmalware.exe
+Task?NotMalwareAtAll
+Reg?HKLM:\Software\Microsoft\Windows\CurrentVersion\Run?NotMalwareRunKey?Delete
+Reg?HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest?UseLogonCredential?0
+Hash?9b9ca6b2874fca26e1e4f08d579e5e80
+Service?evilsvc
