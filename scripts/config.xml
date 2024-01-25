@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="unicode"?>
+<Configuration>
+        <Speed>1</Speed> 
+		<!-- Speed variable determines the execution speed of the script. 1 => fastest, 10 => slowest -->
+        <Max_FileSize>30</Max_FileSize>
+		<!-- Max_FileSize variable determines, which files will be hashed by looking at file size. This is the maximum of the file size limit in MB-->
+        <ExcludedPaths>C:\Windows</ExcludedPaths>
+		<ExcludedPaths>C:\Python27</ExcludedPaths>
+		<!-- ExcludedPaths variable determines, which paths will be exclude for hashing. For ex: if "C:\Windows" added C:\Windows\calc.exe won't be hash. 
+			This variable can be multiple -->
+		<DatabaseUpdate>TRUE</DatabaseUpdate>
+		<!-- DatabaseUpdate variable determines if you want to update hash and file database. If you want to update database value need to be TRUE, 
+			if you do not want to update value need to be FALSE -->
+</Configuration>
