@@ -84,5 +84,5 @@ I would like to thank [Ahmet A. GÜLTEKİN](https://www.linkedin.com/in/ahmetgul
 Release Notes
 -----
 
-v1.1.0 27.01.2024 => Now also compatible for PowerShell v4.0+ and some bug fixes. (Please share your experience with tool. Contact me freely from my contact addresses)
+v1.1.0 27.01.2024 => Now also compatible for PowerShell v4.0+ and some bug fixes. User input for continue or not disabled for this release. Will be add with extra "remote" feature. (Please share your experience with tool. Contact me freely from my contact addresses)
  
