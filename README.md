@@ -5,7 +5,7 @@ WolfResponder
 
 Introduction
 ------------
-WolfRespond is a PowerShell v5.0+ compatible PowerShell IOC deletion tool.
+WolfRespond is a PowerShell v4.0+ compatible PowerShell IOC deletion tool.
 
 Background
 ----------
@@ -84,5 +84,5 @@ I would like to thank [Ahmet A. GÜLTEKİN](https://www.linkedin.com/in/ahmetgul
 Release Notes
 -----
 
-v1.1.0 27.01.2024 => Now also compatible for PowerShell 4.0+ and some bug fixes. (Please share your experience with tool. Contact me freely from my contact addresses)
+v1.1.0 27.01.2024 => Now also compatible for PowerShell v4.0+ and some bug fixes. (Please share your experience with tool. Contact me freely from my contact addresses)
  
