@@ -522,16 +522,18 @@ function Start-Script{
 	Write-Host "[INFO] Volumes that will be scan => $($volumeNames)" -ForegroundColor Green
 	Write-Host "[INFO] File and hashes database path => $($dbFolder)" -ForegroundColor Green
 	Write-Host "[INFO] Runtime log path => $($runtimeLogFolder)" -ForegroundColor Green
-	Write-Host "[?]Script will be run with these configurations, do you wanna continue?(Y\N)" -ForegroundColor red
-	$userAnswer = Read-Host  
-	if($userAnswer -eq "Y"){
-		Write-Host "[INFO] Script will be run" -ForegroundColor Green
-		IOC_Deleter
-		}
-	else{
-		Write-Host "[INFO] Script is stopped" -ForegroundColor Green
-		exit
-		}
+	Write-Host "[INFO] Script will be run" -ForegroundColor Green
+	IOC_Deleter
+	#Write-Host "[?]Script will be run with these configurations, do you wanna continue?(Y\N)" -ForegroundColor red
+	#$userAnswer = Read-Host  
+	#if($userAnswer -eq "Y"){
+	#	Write-Host "[INFO] Script will be run" -ForegroundColor Green
+	#	IOC_Deleter
+	#	}
+	#else{
+	#	Write-Host "[INFO] Script is stopped" -ForegroundColor Green
+	#	exit
+	#	}
 	}
 $errorActionPreference = "SilentlyContinue"
 if ($ConfigFile -eq "--help" -or $ConfigFile -eq "-h") {
