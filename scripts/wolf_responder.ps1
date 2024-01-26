@@ -146,7 +146,62 @@ function hashFiles{
 	    $line | Add-Content -Path $dbFolder -Encoding UTF8
 	}}
 function IOC_Deleter{
-	function deleteService {
+	function Get-Tasks{
+	param (
+	[Parameter(mandatory=$true)]
+	$taskFolder
+	)
+    $folderQueue = New-Object System.Collections.Queue
+    $folderQueue.Enqueue($taskFolder)
+    $taskList = @()
+    while ($folderQueue.Count -gt 0) {
+        $currentFolder = $folderQueue.Dequeue()
+        $Tasks = $currentFolder.GetTasks(0)
+        foreach ($Task in $Tasks) {
+            $Actions = $Task.Definition.Actions
+            foreach ($Action in $Actions) {
+				$temporaryTaskVariable = [PSCustomObject]@{
+				TaskName = $Task.Name
+				Command = $Action.Path + " " + $Action.Arguments
+					}
+				$taskList += $temporaryTaskVariable
+				}
+			}
+        $SubFolders = $currentFolder.GetFolders(0)
+        foreach ($SubFolder in $SubFolders) {
+            $folderQueue.Enqueue($SubFolder)
+			}
+		}
+    return $taskList
+	}
+	function Filter-Tasks{
+		param(
+		[Parameter(mandatory=$true)]
+		$Tasks,
+		[Parameter(mandatory=$true)]
+		$Keyword
+		)
+		$filteredTasks = @()
+		foreach ($Task in $Tasks) {
+			if ($Task.TaskName -match $Keyword.replace("\","\\") -OR $Task.Command -match $Keyword.replace("\","\\")) {
+				$filteredTasks += $Task
+				}
+			}
+		return $filteredTasks
+		}
+	function Get-TaskProperties{
+		param(
+		[Parameter(mandatory=$true)]
+		$taskProperty
+		)
+	$taskScheduler = New-Object -ComObject Schedule.Service
+	$taskScheduler.Connect()
+	$rootFolder = $taskScheduler.GetFolder("\")
+	$allTasks = Get-Tasks -taskFolder $rootFolder
+	[System.Runtime.Interopservices.Marshal]::ReleaseComObject($TaskScheduler) | Out-Null
+	return (Filter-Tasks -Tasks $allTasks -Keyword $taskProperty)
+		}
+	function Delete-Service {
 		param (
 			[string]$ServiceNameOrPath,
 			[bool]$ServicePathForDelete,
@@ -184,14 +239,14 @@ function IOC_Deleter{
 			Add-Content -Path $runtimeLogFolder -Value "$($ServiceNameOrPath) couldn't find," -Encoding UTF8
 			}
 		}
-    function controlService{
+    function Control-Service{
 		param(
 		$ServicePath
 		)
 		$service = Get-WmiObject Win32_Service | Where-Object { $_.PathName -match $ServicePath.replace("\","\\")}
 		return $service
 		}
-	function deleteFile{
+	function Delete-File{
     	param(
     	$FileName
     	)
@@ -199,32 +254,38 @@ function IOC_Deleter{
 		$isFileExist = Test-Path $FileName
 		if($Mode -eq "Delete" -and $isFileExist){
 				$runningProcessID = $processes | Foreach-Object { if($_ -match $FileName.replace("\","\\")){return $_.ProcessId}}
-				$fileTaskProperties=retrieveTaskInfo -searchCommand $FileName -fromDeleteFile $true
-				$fileServiceProperties = controlService -ServicePath $FileName
+				$fileTaskProperties=Get-TaskProperties -taskProperty $FileName
+				$fileServiceProperties = Control-Service -ServicePath $FileName
 				if($fileTaskProperties){
-					deleteTask -TaskProperties $fileTaskProperties
+					Delete-Task -TaskProperties $fileTaskProperties
 				}
 				if($fileServiceProperties){
-					deleteService -ServiceNameOrPath $fileServiceProperties.Name -ServiceName $true
+					Delete-Service -ServiceNameOrPath $fileServiceProperties.Name -ServiceName $true
 				}
 				if($runningProcessID){
 					Stop-Process -Id $runningProcessID -Force 
 					Add-Content -Path $runtimeLogFolder -Value "$($FileName) file was detect as a running process and stopped," -Encoding UTF8
 					Write-Host "`t[INFO] $($FileName) file was detect as a running process and stopped." -ForegroundColor Green 
 				}
-				del $FileName
-				Add-Content -Path $runtimeLogFolder -Value "$($FileName) file deleted," -Encoding UTF8
-				Write-Host "`t[INFO] $($FileName) file deleted." -ForegroundColor Green 
+				Remove-Item $FileName -Force
+				if (-not (Test-Path $FileName)) {
+					Add-Content -Path $runtimeLogFolder -Value "$($FileName) file deleted," -Encoding UTF8
+					Write-Host "`t[INFO] $($FileName) file deleted." -ForegroundColor Green 
+					} 
+				elseif(Test-Path $FileName) {
+					Add-Content -Path $runtimeLogFolder -Value "$($FileName) file couldn't delete," -Encoding UTF8
+					Write-Host "`t[INFO] $($FileName) file couldn't delete." -ForegroundColor Green 
+					}
 			}
 		elseif($Mode -eq "Detect" -and $isFileExist){
 				$runningProcessID = $processes | Foreach-Object { if($_ -match $FileName.replace("\","\\")){return $_.ProcessId}}
-				$fileTaskProperties=retrieveTaskInfo -searchCommand $FileName -fromDeleteFile $true
-				$fileServiceProperties = controlService -ServicePath $FileName
+				$fileTaskProperties=Get-TaskProperties -taskProperty $FileName
+				$fileServiceProperties = Control-Service -ServicePath $FileName
 				if($fileTaskProperties){
-					deleteTask -TaskProperties $fileTaskProperties
+					Delete-Task -TaskProperties $fileTaskProperties
 				}
 				if($fileServiceProperties){
-					deleteService -ServiceNameOrPath $fileServiceProperties.Name -ServiceName $true
+					Delete-Service -ServiceNameOrPath $fileServiceProperties.Name -ServiceName $true
 				}
 				if($runningProcessID){
 					Add-Content -Path $runtimeLogFolder -Value "$($FileName) file detected as a running process ID => $($runningProcessID)," -Encoding UTF8
@@ -238,29 +299,37 @@ function IOC_Deleter{
 			Write-Host "`t[INFO] $($FileName) file doesn't exist." -ForegroundColor Green
 			}
         }
-    function deleteTask{
+    function Delete-Task{
     	param(
     	$TaskProperties
     	)
-		$isTaskExist = (Get-ScheduledTask -TaskName $TaskProperties.TaskName)
-		if($Mode -eq "Delete" -and $isTaskExist){
-				if($TaskProperties.State -eq "Running"){
-					Stop-ScheduledTask -TaskName $TaskProperties.TaskName  
+		foreach($taskProperty in $TaskProperties){
+			$taskEndingOutput = ""
+			$taskDeleteOutput = ""
+			$taskQueryOutput = schtasks.exe /Query /TN $taskProperty.TaskName 2>&1
+			if($Mode -eq "Delete"){
+					$taskEndingOutput = schtasks.exe /End /TN $taskProperty.TaskName 2>&1
+					if($taskEndingOutput -match "ERROR:"){
+						Add-Content -Path $runtimeLogFolder -Value "'TaskName : $($taskProperty.TaskName)' 'Task CommandLine : $($taskProperty.Command)' couldn't ended. Error => $($taskEndingOutput)," -Encoding UTF8
+						Write-Host "`t[INFO] 'TaskName : $($taskProperty.TaskName)' 'Task CommandLine : $($taskProperty.Command)' couldn't ended. Error => $($taskEndingOutput)." -ForegroundColor Green
+						return
+						}
+					$taskDeleteOutput = schtasks.exe /Delete /TN $taskProperty.TaskName /F
+					if($taskDeleteOutput -match "ERROR:"){
+						Add-Content -Path $runtimeLogFolder -Value "'TaskName : $($taskProperty.TaskName)' 'Task CommandLine : $($taskProperty.Command)' couldn't deleted. Error => $($taskDeleteOutput)," -Encoding UTF8
+						Write-Host "`t[INFO] 'TaskName : $($taskProperty.TaskName)' 'Task CommandLine : $($taskProperty.Command)' couldn't deleted. Error => $($taskDeleteOutput)." -ForegroundColor Green
+						return
+						}
+					Add-Content -Path $runtimeLogFolder -Value "'TaskName : $($taskProperty.TaskName)' 'Task CommandLine : $($taskProperty.Command)' deleted," -Encoding UTF8
+					Write-Host "`t[INFO] 'TaskName : $($taskProperty.TaskName)' 'Task CommandLine : $($taskProperty.Command)' deleted." -ForegroundColor Green
+			}
+			elseif($Mode -eq "Detect"){
+					Add-Content -Path $runtimeLogFolder -Value "'TaskName : $($taskProperty.TaskName)' 'Task CommandLine : $($taskProperty.Command)' detected," -Encoding UTF8
+					Write-Host "`t[INFO] 'TaskName : $($taskProperty.TaskName)' 'Task CommandLine : $($taskProperty.Command)' detected." -ForegroundColor Green
 				}
-				Unregister-ScheduledTask -TaskName $TaskProperties.TaskName -Confirm:$false
-				Add-Content -Path $runtimeLogFolder -Value "$($TaskProperties.TaskName) stopped and deleted. task command line => $($TaskProperties.Command)," -Encoding UTF8
-				Write-Host "`t[INFO] $($TaskProperties.TaskName) stopped and deleted. task command line => $($TaskProperties.Command)." -ForegroundColor Green
 		}
-    	elseif($Mode -eq "Detect" -and $isTaskExist){
-				Add-Content -Path $runtimeLogFolder -Value "$($TaskProperties.TaskName) detected. task command line => $($TaskProperties.Command)," -Encoding UTF8
-				Write-Host "`t[INFO] $($TaskProperties.TaskName) detected. task command line => $($TaskProperties.Command)." -ForegroundColor Green
-			}
-		elseif(($Mode -eq "Detect" -OR $Mode -eq "Delete") -AND -not $isTaskExist){
-				Add-Content -Path $runtimeLogFolder -Value "$($TaskName.TaskName) couldn't find," -Encoding UTF8
-				Write-Host "`t[INFO] $($TaskName.TaskName) couldn't find." -ForegroundColor Green
-			}
-		}
-    function deleteReg{
+		}	
+    function Delete-Registry{
     	param (
     	$registryKeyName,
 		$registryKeyValue,
@@ -311,73 +380,56 @@ function IOC_Deleter{
 			Write-Host "`t[INFO] $($registryKeyName)\$($registryKeyValue) key and value detect." -ForegroundColor Green
 			}
 		}
-	function retrieveTaskInfo{
-		param(
-        [string]$searchCommand,
-		[bool]$fromDeleteFile,
-		[bool]$fromTaskName
-		)
-		foreach ($task in $taskList) {
-			if($fromDeleteFile -eq $true){
-				$taskAction = $task.Actions | Where-Object { $_.Execute -like "*$searchCommand*" }
-				}
-			elseif($fromTaskName -eq $true){
-				$taskAction = $task.TaskName | Where-Object { $_ -like "*$searchCommand*" }
-				}
-			if ($taskAction) {
-				$taskName = $task.TaskName
-				$taskCommand = $taskAction
-				$taskStatus = $task.State
-				[PSCustomObject]@{
-					TaskName   = $taskName
-					Command    = $taskCommand.Execute
-					Status     = $taskStatus
-				}
-				}
-			}
-		}
-	$taskList = Get-ScheduledTask
-    $IOC_Type=""
+	
+    $iocType=""
 	$hashFlag=$false
     foreach ($ioc in $IOCs){
-    	$IOC_Type=$ioc.split("?")[0]
+    	$iocType=$ioc.split("?")[0]
     	$splittedIOC=$ioc.split("?")[1]
 		Write-Host "[INFO] Operation for $($splittedIOC) is running" -ForegroundColor Yellow
-    	if($IOC_Type -eq "File"){
-    		deleteFile $splittedIOC
+    	if($iocType -match "File"){
+    		Delete-File $splittedIOC
     		}
-    	elseif($IOC_Type.equals("Reg")){
+    	elseif($iocType -match ("Reg")){
 			$characterToCount = '\?'
 			$iocRegKeyName = ""
 			$iocRegKeyValue = ""
 			$iocRegOperation = ""
-			$occurrences = ($ioc | Select-String -Pattern $characterToCount -AllMatches).Matches.Count
+			$Occurrences = ($ioc | Select-String -Pattern $characterToCount -AllMatches).Matches.Count
 			$iocRegKeyName = $ioc.split("?")[1]
 			$iocRegKeyValue = $ioc.split("?")[2]
 			$iocRegOperation = $ioc.split("?")[3] 
-			if($occurrences -ne 4 -AND $iocRegOperation -eq "Change"){
+			if($Occurrences -ne 4 -AND $iocRegOperation -eq "Change"){
 				Add-Content -Path $runtimeLogFolder -Value "$($iocRegKeyName)\$($iocRegKeyValue) key value couldn't change because new value didn't specified," -Encoding UTF8
 				Write-Host "`t[INFO] $($iocRegKeyName)\$($iocRegKeyValue) key value couldn't change because new value didn't specified." -ForegroundColor Green
 				}
-			elseif($occurrences -ne 3 -AND $iocRegOperation -eq "Delete"){
+			elseif($Occurrences -ne 3 -AND $iocRegOperation -eq "Delete"){
 				Add-Content -Path $runtimeLogFolder -Value "$($iocRegKeyName)\$($iocRegKeyValue) didn't change because you give 'new value' parameter but give 'Delete' operation," -Encoding UTF8
 				Write-Host "`t[INFO] $($iocRegKeyName)\$($iocRegKeyValue) didn't change because you give 'new value' parameter but give 'Delete' operation." -ForegroundColor Green
 				}
-			elseif($occurrences -eq 3){
-				deleteReg -registryKeyName $iocRegKeyName -registryKeyValue $iocRegKeyValue -registryOperation $iocRegOperation
+			elseif($Occurrences -eq 3){
+				Delete-Registry -registryKeyName $iocRegKeyName -registryKeyValue $iocRegKeyValue -registryOperation $iocRegOperation
 				}
-			elseif($occurrences -eq 4){
-				deleteReg -registryKeyName $iocRegKeyName -registryKeyValue $iocRegKeyValue -registryOperation $iocRegOperation -newValueData $ioc.split("?")[4]
+			elseif($Occurrences -eq 4){
+				Delete-Registry -registryKeyName $iocRegKeyName -registryKeyValue $iocRegKeyValue -registryOperation $iocRegOperation -newValueData $ioc.split("?")[4]
 				}
     		}
-    	elseif($IOC_Type.equals("Task")){
-    		$taskProp=retrieveTaskInfo -searchCommand $splittedIOC -fromTaskName $true
-			deleteTask -TaskProperties $taskProp
-    		}
-		elseif($IOC_Type.equals("Service")){
-			deleteService -ServiceNameOrPath $splittedIOC -ServiceName $true
+    	elseif($iocType -match ("Task")){
+			if($splittedIOC){
+				$taskProp=Get-TaskProperties -taskProperty $splittedIOC
+				if($taskProp){
+					Delete-Task -TaskProperties $taskProp
+					}
+				else{
+				Add-Content -Path $runtimeLogFolder -Value "'TaskName : $($splittedIOC)' couldn't find," -Encoding UTF8
+				Write-Host "`t[INFO] 'TaskName : $($splittedIOC)' couldn't find." -ForegroundColor Green
+					}
 			}
-		elseif($IOC_Type.equals("Hash")){
+    		}
+		elseif($iocType -match ("Service")){
+			Delete-Service -ServiceNameOrPath $splittedIOC -ServiceName $true
+			}
+		elseif($iocType -match ("Hash")){
 			if($hashFlag -eq $false){
 				Create_File_Database -Update $dbUpdateSwitch
 				$hashFlag=$true
@@ -417,7 +469,7 @@ function HashSearch{
 			$fileHash=$line.split(",")[1]
 			if($fileHash -match $MD5Hash){
 				if(Test-Path $fileNameFromHash){
-					deleteFile -FileName $fileNameFromHash
+					Delete-File -FileName $fileNameFromHash
 					Add-Content -Path $runtimeLogFolder -Value "$($fileNameFromHash) file that has $($MD5Hash) MD5 hash value is deleted ," -Encoding UTF8
 					Write-Host "`t[INFO] $($fileNameFromHash) file that has $($MD5Hash) MD5 hash value is deleted." -ForegroundColor Green
 					$detectFlag = 1
@@ -441,15 +493,18 @@ function Start-Script{
 	$xmlContent= [xml](Get-Content -Path $xmlPath)
 	$iocPath = Join-Path $pwd $IOCFile
 	$IOCs=(Get-Content -Path $iocPath)
-	$physicalDisks = Get-Disk
-	$partitions = $physicalDisks | Get-Partition 
+	$physicalDisks = Get-WmiObject -Class Win32_DiskDrive | Where-Object { $_.MediaType -ne "Removable Media" }
 	$volumeNames = @()
-	foreach ($partition in $partitions){
-		if($partition.DriveLetter){
-			$volumeNames += $partition.DriveLetter + ":\"
+	foreach ($disk in $physicalDisks) {
+		$partitions = Get-WmiObject -Class Win32_DiskPartition | Where-Object { $_.DiskIndex -eq $disk.Index }
+		foreach ($partition in $partitions) {
+			$logicalDisks = Get-WmiObject -Query "ASSOCIATORS OF {Win32_DiskPartition.DeviceID='$($partition.DeviceID)'} WHERE AssocClass = Win32_LogicalDiskToPartition"
+			foreach ($logicalDisk in $logicalDisks) {
+				$volumeNames += [string]$logicalDisk.DeviceID + "\"
 			}
 		}
-	$hostname = hostname
+	}
+	$Hostname = hostname
 	$maxFileSize = [int]($xmlContent.Configuration.Max_FileSize)
 	$maxFileSize = $maxFileSize *1MB
 	$scriptSpeed = [int]($xmlContent.Configuration.Speed)
@@ -459,8 +514,8 @@ function Start-Script{
 	$dbUpdateSwitch = ($xmlContent.Configuration.DatabaseUpdate)
 	$dbFolder = "C:\ProgramData\WolfResponder.db"
 	$dateString = Get-Date -Format "HH_mm_dd_MM_yyyy"
-	$runtimeLogFolder = [string]($pwd)+"\$($hostname)_runtimeLog_"+$dateString+".txt"
-	Set-Content -Path $runtimeLogFolder -Value "$($hostname),"
+	$runtimeLogFolder = [string]($pwd)+"\$($Hostname)_runtimeLog_"+$dateString+".txt"
+	Set-Content -Path $runtimeLogFolder -Value "$($Hostname),"
 	Write-Host "[INFO] Max file size => $($maxFileSize/(1024*1024))MB" -ForegroundColor Green
 	Write-Host "[INFO] ScriptSpeed => $($scriptSpeed)" -ForegroundColor Green
 	Write-Host "[INFO] Excluded Paths => $($excludedPaths)" -ForegroundColor Green
