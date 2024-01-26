@@ -63,7 +63,7 @@ Features
 
 1. File delete (with name), if given file is part of process script will kill it, if given file is part of service script will delete this service, if given file is part of task script will delete this task and log all of this behaviour(File detect as part of task and task deleted etc.).
 2. Registry value delete and change.
-3. Task (with name) delete.
+3. Task (with name) delete. (Task name and command lines search with regexes. Take your own risk when giving task name. Don't give generic names)
 4. Service (with name) delete.
 5. Hash search and delete. If the hash value given as IOC is detected in more than one file all files will be delete and logged.
 6. All steps (deleted, couldn't find, detected etc.) will log on text file in script folder named "[Machine name]_runtimeLog_HH_mm_dd_MM_yyyy.txt".
@@ -80,4 +80,9 @@ Thanks to
 -----
 
 I would like to thank [Ahmet A. GÜLTEKİN](https://www.linkedin.com/in/ahmetgultekin12/)  and [Gökhan AYDIN](https://www.linkedin.com/in/gkhn-ydn/) for giving me ideas during this process.
+
+Release Notes
+-----
+
+v1.1.0 27.01.2024 => Now also compatible for PowerShell 4.0+ and some bug fixes. (Please share your experience with tool. Contact me freely from my contact addresses)
  
